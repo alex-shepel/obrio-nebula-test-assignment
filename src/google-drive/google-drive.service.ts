@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import { GoogleAuthService } from '../google-auth/google-auth.service';
 import axios from 'axios';
 import * as path from 'path';
-import { Readable } from 'stream';
+import { PassThrough } from 'stream';
 
 @Injectable()
 export class GoogleDriveService {
@@ -68,20 +68,20 @@ export class GoogleDriveService {
 
   async saveFilesToDrive(fileUrls: string[]): Promise<any[]> {
     return Promise.all(
-        fileUrls.map(async (fileUrl) => {
-          try {
-            const { data, headers } = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-            const fileName = this.getFileNameFromHeaders(fileUrl, headers);
-            const mimeType = headers['content-type'];
-            const fileId = await this.uploadFileToDrive(fileName, data, mimeType);
+      fileUrls.map(async (fileUrl) => {
+        try {
+          const { data: fileStream, headers } = await axios.get(fileUrl, { responseType: 'stream' });
+          const fileName = this.getFileNameFromHeaders(fileUrl, headers);
+          const mimeType = headers['content-type'];
 
-            return { fileUrl, fileName, fileId };
-          } catch (error) {
-            console.error(`Error processing file from URL: ${fileUrl}`, error.message);
+          const fileId = await this.uploadStreamToDrive(fileName, fileStream, mimeType);
 
-            return { fileUrl, error: error.message };
-          }
-        })
+          return { fileUrl, fileName, fileId };
+        } catch (error) {
+          console.error(`Error processing file from URL: ${fileUrl}`, error.message);
+          return { fileUrl, error: error.message };
+        }
+      }),
     );
   }
 
@@ -110,18 +110,19 @@ export class GoogleDriveService {
     return path.basename(new URL(fileUrl).pathname);
   }
 
-  private async uploadFileToDrive(fileName: string, fileData: Buffer, mimeType: string): Promise<string> {
-    const fileStream = Readable.from(fileData);
+  private async uploadStreamToDrive(fileName: string, fileStream: NodeJS.ReadableStream, mimeType: string): Promise<string> {
+    const passThrough = new PassThrough();
+    fileStream.pipe(passThrough);
 
     const response = await this.drive.files.create({
       requestBody: {
         name: fileName,
         mimeType,
-        parents: [this.workingDirectoryId]
+        parents: [this.workingDirectoryId],
       },
       media: {
         mimeType,
-        body: fileStream,
+        body: passThrough,
       },
       fields: 'id',
     });
