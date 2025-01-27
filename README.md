@@ -26,3 +26,7 @@ $ npm run start:prod
 # inside the container
 $ docker compose up
 ```
+
+## Architecture
+
+![architecture.png](architecture.png)
