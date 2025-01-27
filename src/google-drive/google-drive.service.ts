@@ -3,8 +3,8 @@ import { drive, drive_v3 } from 'googleapis/build/src/apis/drive';
 import { GoogleAuthService } from 'src/google-auth/google-auth.service';
 import { PassThrough } from 'stream';
 import {
-  DriveFile,
-  SaveDriveFileResult,
+  DriveFileListResult,
+  DriveFileSaveResult,
 } from 'src/google-drive/google-drive.types';
 import { FileFetchService } from 'src/file-fetch/file-fetch.service';
 
@@ -65,7 +65,7 @@ export class GoogleDriveService {
     this.workingDirectoryId = createdFolder.id;
   }
 
-  async listFiles(): Promise<DriveFile[]> {
+  async listFiles(): Promise<DriveFileListResult[]> {
     const { data } = await this.drive.files.list({
       q: `'${this.workingDirectoryId}' in parents and trashed=false`,
       fields: 'files(mimeType,id,name,webViewLink)',
@@ -78,10 +78,14 @@ export class GoogleDriveService {
       );
     }
 
-    return data.files;
+    return data.files.map(file => ({
+      fileUrl: file.webViewLink ?? null,
+      fileName: file.name ?? null,
+      fileId: file.id ?? null,
+    }));
   }
 
-  async saveFilesToDrive(fileUrls: string[]): Promise<SaveDriveFileResult[]> {
+  async saveFilesToDrive(fileUrls: string[]): Promise<DriveFileSaveResult[]> {
     return Promise.all(
       fileUrls.map(async (fileUrl) => {
         try {

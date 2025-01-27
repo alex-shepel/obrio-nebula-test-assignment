@@ -1,12 +1,10 @@
-import { drive_v3 } from 'googleapis/build/src/apis/drive';
-
-export interface DriveFile extends drive_v3.Schema$File {}
-
-export type SaveDriveFileResult = {
-  fileUrl: string;
-  fileName: string;
-  fileId: string;
-} | {
-  fileUrl: string;
-  error: string;
+export type DriveFileListResult = {
+  fileUrl: string | null;
+  fileName: string | null;
+  fileId: string | null;
 }
+
+export type DriveFileSaveResult = (
+  | DriveFileListResult
+  | Pick<DriveFileListResult, 'fileUrl'> & { error: string }
+);
