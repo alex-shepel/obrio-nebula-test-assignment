@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { google } from 'googleapis';
-import { GoogleAuthService } from '../google-auth/google-auth.service';
-import axios from 'axios';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { drive, drive_v3 } from 'googleapis/build/src/apis/drive';
+import { GoogleAuthService } from 'src/google-auth/google-auth.service';
+import axios from 'axios';
 import * as path from 'path';
 import { PassThrough } from 'stream';
+import {
+  DriveFile,
+  SaveDriveFileResult,
+} from 'src/google-drive/google-drive.types';
+import { ExtendedAxiosHeaders } from 'src/types';
 
 @Injectable()
 export class GoogleDriveService {
   private static readonly WORKING_DIRECTORY_NAME = 'obrio-nebula-test-assignment';
 
-  private drive;
+  private drive: drive_v3.Drive;
   private workingDirectoryId: string;
 
   constructor(private readonly authService: GoogleAuthService) {
@@ -25,7 +29,7 @@ export class GoogleDriveService {
   private async initDrive() {
     const authClient = await this.authService.getAuthClient();
 
-    this.drive = google.drive({
+    this.drive = drive({
       version: 'v3',
       auth: authClient,
     });
@@ -50,10 +54,17 @@ export class GoogleDriveService {
       fields: 'id',
     });
 
+    if (!createdFolder.id) {
+      throw new HttpException(
+        `Cannot create working directory: ${GoogleDriveService.WORKING_DIRECTORY_NAME}`,
+        HttpStatus.CONFLICT
+      );
+    }
+
     this.workingDirectoryId = createdFolder.id;
   }
 
-  async listFiles(): Promise<any> {
+  async listFiles(): Promise<DriveFile[]> {
     const { data } = await this.drive.files.list({
       q: `'${this.workingDirectoryId}' in parents and trashed=false`,
       fields: 'files(mimeType,id,name,webViewLink)',
@@ -69,12 +80,13 @@ export class GoogleDriveService {
     return data.files;
   }
 
-  async saveFilesToDrive(fileUrls: string[]): Promise<any[]> {
+  async saveFilesToDrive(fileUrls: string[]): Promise<SaveDriveFileResult[]> {
     return Promise.all(
       fileUrls.map(async (fileUrl) => {
         try {
           const { data: fileStream, headers } = await axios.get(fileUrl, { responseType: 'stream' });
-          const fileName = this.getFileNameFromHeaders(fileUrl, headers);
+
+          const fileName = this.getFileNameFromHeaders(fileUrl, headers as ExtendedAxiosHeaders);
           const mimeType = headers['content-type'];
 
           const fileId = await this.uploadStreamToDrive(fileName, fileStream, mimeType);
@@ -88,19 +100,15 @@ export class GoogleDriveService {
   }
 
   private async getWorkingFolderId(): Promise<string | null> {
-    const response = await this.drive.files.list({
+    const { data } = await this.drive.files.list({
       q: `name='${GoogleDriveService.WORKING_DIRECTORY_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: 'files(id)',
     });
 
-    if (response.data.files.length > 0) {
-      return response.data.files[0].id;
-    }
-
-    return null;
+    return data.files?.[0].id ?? null;
   }
 
-  private getFileNameFromHeaders(fileUrl: string, headers: any): string {
+  private getFileNameFromHeaders(fileUrl: string, headers: ExtendedAxiosHeaders): string {
     if (headers['content-disposition']) {
       const match = headers['content-disposition'].match(/filename="(.+)"/);
 
@@ -116,7 +124,7 @@ export class GoogleDriveService {
     const passThrough = new PassThrough();
     fileStream.pipe(passThrough);
 
-    const response = await this.drive.files.create({
+    const { data } = await this.drive.files.create({
       requestBody: {
         name: fileName,
         mimeType,
@@ -129,13 +137,13 @@ export class GoogleDriveService {
       fields: 'id',
     });
 
-    if (!response.data.id) {
+    if (!data.id) {
       throw new HttpException(
         `File ${fileName} can not be uploaded`,
         HttpStatus.BAD_REQUEST
       );
     }
 
-    return response.data.id;
+    return data.id;
   }
 }
