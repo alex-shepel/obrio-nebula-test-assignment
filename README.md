@@ -26,7 +26,3 @@ $ npm run start:prod
 # inside the container
 $ docker compose up
 ```
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
