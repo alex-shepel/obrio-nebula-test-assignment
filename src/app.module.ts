@@ -4,10 +4,11 @@ import { GoogleDriveService } from './google-drive/google-drive.service';
 import { GoogleAuthService } from './google-auth/google-auth.service';
 import { ConfigModule } from '@nestjs/config';
 import { SaveController } from './save/save.controller';
+import { FileFetchService } from 'src/file-fetch/file-fetch.service';
 
 @Module({
   imports: [ConfigModule.forRoot()],
   controllers: [ListController, SaveController],
-  providers: [GoogleDriveService, GoogleAuthService],
+  providers: [GoogleDriveService, GoogleAuthService, FileFetchService],
 })
 export class AppModule {}

@@ -1,14 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { drive, drive_v3 } from 'googleapis/build/src/apis/drive';
 import { GoogleAuthService } from 'src/google-auth/google-auth.service';
-import axios from 'axios';
-import * as path from 'path';
 import { PassThrough } from 'stream';
 import {
   DriveFile,
   SaveDriveFileResult,
 } from 'src/google-drive/google-drive.types';
-import { ExtendedAxiosHeaders } from 'src/types';
+import { FileFetchService } from 'src/file-fetch/file-fetch.service';
 
 @Injectable()
 export class GoogleDriveService {
@@ -17,7 +15,10 @@ export class GoogleDriveService {
   private drive: drive_v3.Drive;
   private workingDirectoryId: string;
 
-  constructor(private readonly authService: GoogleAuthService) {
+  constructor(
+    private readonly authService: GoogleAuthService,
+    private readonly fileFetchService: FileFetchService,
+  ) {
     this.init();
   }
 
@@ -84,10 +85,11 @@ export class GoogleDriveService {
     return Promise.all(
       fileUrls.map(async (fileUrl) => {
         try {
-          const { data: fileStream, headers } = await axios.get(fileUrl, { responseType: 'stream' });
-
-          const fileName = this.getFileNameFromHeaders(fileUrl, headers as ExtendedAxiosHeaders);
-          const mimeType = headers['content-type'];
+          const {
+            fileStream,
+            fileName,
+            mimeType,
+          } = await this.fileFetchService.fetchFileStream(fileUrl);
 
           const fileId = await this.uploadStreamToDrive(fileName, fileStream, mimeType);
 
@@ -106,18 +108,6 @@ export class GoogleDriveService {
     });
 
     return data.files?.[0].id ?? null;
-  }
-
-  private getFileNameFromHeaders(fileUrl: string, headers: ExtendedAxiosHeaders): string {
-    if (headers['content-disposition']) {
-      const match = headers['content-disposition'].match(/filename="(.+)"/);
-
-      if (match) {
-        return match[1];
-      }
-    }
-
-    return path.basename(new URL(fileUrl).pathname);
   }
 
   private async uploadStreamToDrive(fileName: string, fileStream: NodeJS.ReadableStream, mimeType: string): Promise<string> {
