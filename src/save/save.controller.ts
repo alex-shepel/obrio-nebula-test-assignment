@@ -1,5 +1,13 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { GoogleDriveService } from 'src/google-drive/google-drive.service';
+import {
+  Body,
+  Controller,
+  HttpException,
+  HttpStatus,
+  Post,
+} from '@nestjs/common';
+import {
+  GoogleDriveService,
+} from 'src/google-drive/google-drive.service';
 
 @Controller('save')
 export class SaveController {
@@ -8,14 +16,12 @@ export class SaveController {
   @Post()
   async saveFiles(@Body('links') filesUrls: string[]) {
     if (!Array.isArray(filesUrls) || filesUrls.length === 0) {
-      return { error: 'No file URLs provided' };
+      throw new HttpException(
+        `Array of files links must be provided`,
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    const results = await this.googleDriveService.saveFilesToDrive(filesUrls);
-
-    return {
-      message: 'Files processed successfully',
-      results,
-    };
+    return this.googleDriveService.saveFilesToDrive(filesUrls);
   }
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { google } from 'googleapis';
 import { GoogleAuthService } from '../google-auth/google-auth.service';
 import axios from 'axios';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import * as path from 'path';
 import { PassThrough } from 'stream';
 
@@ -53,17 +54,19 @@ export class GoogleDriveService {
   }
 
   async listFiles(): Promise<any> {
-    try {
-      const response = await this.drive.files.list({
-        q: `'${this.workingDirectoryId}' in parents and trashed=false`,
-        fields: 'files(mimeType,id,name,webViewLink)',
-      });
+    const { data } = await this.drive.files.list({
+      q: `'${this.workingDirectoryId}' in parents and trashed=false`,
+      fields: 'files(mimeType,id,name,webViewLink)',
+    });
 
-      return response.data.files;
-    } catch (error) {
-      console.error('Error listing files from Google Drive:', error.message);
-      throw new Error('Failed to list files');
+    if (!data.files) {
+      throw new HttpException(
+        `Cannot list files for request: '${this.workingDirectoryId}' in parents and trashed=false`,
+        HttpStatus.BAD_REQUEST
+      );
     }
+
+    return data.files;
   }
 
   async saveFilesToDrive(fileUrls: string[]): Promise<any[]> {
@@ -78,7 +81,6 @@ export class GoogleDriveService {
 
           return { fileUrl, fileName, fileId };
         } catch (error) {
-          console.error(`Error processing file from URL: ${fileUrl}`, error.message);
           return { fileUrl, error: error.message };
         }
       }),
@@ -126,6 +128,13 @@ export class GoogleDriveService {
       },
       fields: 'id',
     });
+
+    if (!response.data.id) {
+      throw new HttpException(
+        `File ${fileName} can not be uploaded`,
+        HttpStatus.BAD_REQUEST
+      );
+    }
 
     return response.data.id;
   }
