@@ -1,12 +1,8 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { drive, drive_v3 } from 'googleapis/build/src/apis/drive';
 import { GoogleAuthService } from 'src/google-auth/google-auth.service';
-import { PassThrough } from 'stream';
-import {
-  DriveFileListResult,
-  DriveFileSaveResult,
-} from 'src/google-drive/google-drive.types';
-import { FileFetchService } from 'src/file-fetch/file-fetch.service';
+import { Readable } from 'stream';
+import { DriveFileListResult } from 'src/google-drive/google-drive.types';
 
 @Injectable()
 export class GoogleDriveService {
@@ -14,11 +10,9 @@ export class GoogleDriveService {
 
   private drive: drive_v3.Drive;
   private workingDirectoryId: string;
+  private uploadedBytes: number = 0;
 
-  constructor(
-    private readonly authService: GoogleAuthService,
-    private readonly fileFetchService: FileFetchService,
-  ) {
+  constructor(private readonly authService: GoogleAuthService) {
     this.init();
   }
 
@@ -34,8 +28,6 @@ export class GoogleDriveService {
       version: 'v3',
       auth: authClient,
     });
-
-    await this.initWorkingFolder();
   }
 
   private async initWorkingFolder(): Promise<void> {
@@ -85,26 +77,6 @@ export class GoogleDriveService {
     }));
   }
 
-  async saveFilesToDrive(fileUrls: string[]): Promise<DriveFileSaveResult[]> {
-    return Promise.all(
-      fileUrls.map(async (fileUrl) => {
-        try {
-          const {
-            fileStream,
-            fileName,
-            mimeType,
-          } = await this.fileFetchService.fetchFileStream(fileUrl);
-
-          const fileId = await this.uploadStreamToDrive(fileName, fileStream, mimeType);
-
-          return { fileUrl, fileName, fileId };
-        } catch (error) {
-          return { fileUrl, error: error.message };
-        }
-      }),
-    );
-  }
-
   private async getWorkingFolderId(): Promise<string | null> {
     const { data } = await this.drive.files.list({
       q: `name='${GoogleDriveService.WORKING_DIRECTORY_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
@@ -114,22 +86,27 @@ export class GoogleDriveService {
     return data.files?.[0].id ?? null;
   }
 
-  private async uploadStreamToDrive(fileName: string, fileStream: NodeJS.ReadableStream, mimeType: string): Promise<string> {
-    const passThrough = new PassThrough();
-    fileStream.pipe(passThrough);
-
+  async streamFileToDrive(fileStream: Readable, fileName: string, fileSize: number): Promise<string> {
     const { data } = await this.drive.files.create({
       requestBody: {
         name: fileName,
-        mimeType,
+        mimeType: 'application/octet-stream',
         parents: [this.workingDirectoryId],
       },
       media: {
-        mimeType,
-        body: passThrough,
+        mimeType: 'application/octet-stream',
+        body: fileStream,
       },
       fields: 'id',
+    },
+    {
+      onUploadProgress: (evt) => {
+        this.uploadedBytes = evt.bytesRead;
+        console.log(`Uploaded ${this.uploadedBytes} of ${fileSize} bytes`);
+      },
     });
+
+    console.log('File uploaded:', data);
 
     if (!data.id) {
       throw new HttpException(

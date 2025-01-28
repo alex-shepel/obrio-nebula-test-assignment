@@ -5,12 +5,12 @@ import {
   HttpStatus,
   Post,
 } from '@nestjs/common';
-import { GoogleDriveService } from 'src/google-drive/google-drive.service';
 import { DriveFileSaveResult } from 'src/google-drive/google-drive.types';
+import { SaveService } from 'src/save/save.service';
 
 @Controller('save')
 export class SaveController {
-  constructor(private readonly googleDriveService: GoogleDriveService) {}
+  constructor(private readonly saveService: SaveService) {}
 
   @Post()
   async saveFiles(@Body('links') filesUrls: string[]): Promise<DriveFileSaveResult[]> {
@@ -21,6 +21,6 @@ export class SaveController {
       );
     }
 
-    return this.googleDriveService.saveFilesToDrive(filesUrls);
+    return this.saveService.saveFiles(filesUrls);
   }
 }

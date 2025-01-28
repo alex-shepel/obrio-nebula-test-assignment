@@ -1,7 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Readable } from 'stream';
-import { Agent as HttpAgent } from 'http';
-import { Agent as HttpsAgent } from 'https';
 import fetch, { Headers } from 'node-fetch';
 import * as path from 'path';
 
@@ -9,30 +7,34 @@ import * as path from 'path';
 export class FileFetchService {
   private static readonly DEFAULT_MIME_TYPE = 'text/plain';
 
-  private static readonly httpAgent: HttpAgent = new HttpAgent({ keepAlive: true });
-  private static readonly httpsAgent: HttpsAgent = new HttpsAgent({ keepAlive: true });
+  async getFileStream(url: string): Promise<Readable> {
+    let startByte = 0;
 
-  async fetchFileStream(url: string) {
-    const isHttps = url.startsWith('https://');
-    const agent = isHttps ? FileFetchService.httpsAgent : FileFetchService.httpAgent;
-
-    const response = await fetch(url, { agent });
+    const response = await fetch(url, {
+      headers: {
+        Range: `bytes=${startByte}-`,
+      },
+    });
 
     if (!response.ok || !response.body) {
-      throw new Error(`Failed to fetch file. HTTP status: ${response.status}`);
+      throw new Error(`Failed to download file: ${response.statusText}`);
     }
 
-    const mimeType = response.headers.get('content-type') ?? FileFetchService.DEFAULT_MIME_TYPE;
+    return Readable.from(response.body);
+  }
 
+  async getFileMetadata(url: string) {
+    const response = await fetch(url, { method: 'HEAD' });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch file metadata. HTTP status: ${response.status}`);
+    }
+
+    const mimeType = this.getFileMimeTypeFromHeaders(response.headers);
     const fileName = this.getFileNameFromHeaders(url, response.headers);
+    const fileSize = this.getFileSizeFromHeaders(response.headers);
 
-    const fileStream = Readable.from(response.body);
-
-    return {
-      fileStream,
-      fileName,
-      mimeType,
-    };
+    return { fileSize, mimeType, fileName };
   }
 
   private getFileNameFromHeaders(fileUrl: string, headers: Headers): string {
@@ -43,5 +45,22 @@ export class FileFetchService {
     }
 
     return path.basename(new URL(fileUrl).pathname);
+  }
+
+  private getFileSizeFromHeaders(headers: Headers): number {
+    const size = parseInt(headers.get('content-length') ?? '0', 10);
+
+    if (isNaN(size)) {
+      throw new HttpException(
+        'File size is missing or invalid.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return size;
+  }
+
+  private getFileMimeTypeFromHeaders(headers: Headers): string {
+    return headers.get('content-type') ?? FileFetchService.DEFAULT_MIME_TYPE;
   }
 }
